@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# PRmeter — your open PRs and what they need, printed when a Claude Code session starts.
+#
+# Two lights per pull request: CI on the left, review on the right. Green is done,
+# yellow is waiting, red needs you, grey means the API said nothing and we do not guess.
+#
+# The block is rendered at fetch time and cached as text, so printing it is a `cat`.
+# A stale cache prints anyway and refreshes in a background child, because a session
+# start must never wait on the network.
+#
+# Needs `gh` (signed in) and `jq`.
+
+set -uo pipefail
+
+VERSION="1.0.0"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+ORG="${PRMETER_ORG:-teamsense}"
+REPO_CHARS="${PRMETER_REPO_CHARS:-12}"
+TITLE_CHARS="${PRMETER_TITLE_CHARS:-60}"
+MAX_ROWS="${PRMETER_MAX:-8}"
+TTL="${PRMETER_TTL:-300}"
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/prmeter"
+CACHE="$CACHE_DIR/block.txt"
+STAMP="$CACHE_DIR/fetched-at"
+
+# Terminals that cannot draw the glyphs get plain ASCII. PRMETER_ASCII=1 forces the
+# fallback, 0 forbids it; unset decides from the locale.
+want_ascii() {
+    case "${PRMETER_ASCII:-}" in
+        1) return 0 ;;
+        0) return 1 ;;
+    esac
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *[Uu][Tt][Ff]8* | *[Uu][Tt][Ff]-8*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# One call answers both lists. `draft:false` is a search qualifier, so drafts never
+# leave GitHub, and `mergeable` rides along for free.
+read -r -d '' QUERY <<'GRAPHQL'
+query($q1: String!, $q2: String!) {
+  mine: search(query: $q1, type: ISSUE, first: 50) {
+    nodes { ... on PullRequest {
+      number title mergeable reviewDecision
+      repository { name }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    } }
+  }
+  toReview: search(query: $q2, type: ISSUE, first: 50) {
+    nodes { ... on PullRequest {
+      number title mergeable reviewDecision
+      repository { name }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    } }
+  }
+}
+GRAPHQL
+
+read -r -d '' RENDER <<'JQ'
+def g: if $ascii == "1"
+       then {ok:"+", pend:"~", fail:"x", none:".", ell:">", head:"PR", sep:"."}
+       else {ok:"✓", pend:"◷", fail:"✗", none:"·", ell:"…", head:"⑂", sep:"·"}
+       end;
+def paint($code): if $nocolor == "1" then . else "\u001b[" + $code + "m" + . + "\u001b[0m" end;
+def cut($n): if $n <= 0 then "" elif length <= $n then . else .[0:$n-1] + g.ell end;
+def padr($n): . + (" " * ([$n - length, 0] | max) // "");
+
+# A light is a name and a colour. The name also orders the list: what needs you first,
+# then what is waiting, then what nobody has been asked about, then what is done.
+def rank: {"fail":0, "pend":1, "none":2, "ok":3}[.];
+def as_light: {name: .[0], code: .[1], glyph: g[.[0]]};
+
+# A merge conflict is a red CI light: it blocks the merge and it is yours to fix.
+# UNKNOWN is GitHub not having computed mergeability yet, so it changes nothing.
+def ci_light:
+    (if .mergeable == "CONFLICTING" then "FAILURE"
+     else (.commits.nodes[0].commit.statusCheckRollup.state // "NONE") end)
+    | {"SUCCESS": ["ok","32"], "PENDING": ["pend","33"], "EXPECTED": ["pend","33"],
+       "FAILURE": ["fail","31"], "ERROR": ["fail","31"]}[.] // ["none","90"]
+    | as_light;
+def rv_light:
+    (.reviewDecision // "NONE")
+    | {"APPROVED": ["ok","32"], "REVIEW_REQUIRED": ["pend","33"],
+       "CHANGES_REQUESTED": ["fail","31"]}[.] // ["none","90"]
+    | as_light;
+
+def row($group):
+    . as $pr | ci_light as $ci | rv_light as $rv
+    | {group: $group,
+       rank: ([($ci.name | rank), ($rv.name | rank)] | min),
+       repo: $pr.repository.name,
+       number: ($pr.number | tostring),
+       title: $pr.title, ci: $ci, rv: $rv};
+
+([.data.mine.nodes[]     | row("mine")]   | sort_by(.rank, .repo, .number)) as $mine   |
+([.data.toReview.nodes[] | row("review")] | sort_by(.rank, .repo, .number)) as $review |
+($mine + $review) as $all |
+if ($all | length) == 0 then empty else
+  ($all[0:($max | tonumber)]) as $shown |
+  (($all | length) - ($shown | length)) as $hidden |
+  [ (g.head | paint("36")) + " " + $org + "  "
+    + ((($mine | length | tostring) + " mine " + g.sep + " "
+        + ($review | length | tostring) + " to review") | paint("90")) ]
+  + [ $shown
+      | to_entries[]
+      | .key as $i | .value as $r
+      # The group label sits in the gutter and prints once per group, not once per row.
+      | (if $i == 0 or $shown[$i - 1].group != $r.group then $r.group else "" end) as $label
+      | " " + (($label | padr(7)) | paint("36"))
+        + ($r.ci.glyph | paint($r.ci.code)) + ($r.rv.glyph | paint($r.rv.code)) + " "
+        + (($r.repo | cut($repochars | tonumber) | padr($repochars | tonumber)) | paint("90"))
+        + " " + ($r.number | padr(5)) + " "
+        + ($r.title | cut($titlechars | tonumber)) ]
+  + (if $hidden > 0
+     then [ ("        + " + ($hidden | tostring) + " more") | paint("90") ] else [] end)
+  | .[]
+end
+JQ
+
+fetch() {
+    mkdir -p "$CACHE_DIR" || return 1
+    local ascii=0 nocolor=0 raw out
+    want_ascii && ascii=1
+    [ -n "${NO_COLOR:-}" ] && nocolor=1
+
+    raw=$(gh api graphql \
+        -f query="$QUERY" \
+        -F q1="org:$ORG author:@me is:pr is:open draft:false" \
+        -F q2="org:$ORG review-requested:@me is:pr is:open draft:false") || return 1
+
+    out=$(printf '%s' "$raw" | jq -r \
+        --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
+        --arg repochars "$REPO_CHARS" --arg titlechars "$TITLE_CHARS" \
+        --arg max "$MAX_ROWS" \
+        "$RENDER") || return 1
+
+    # An empty block is a real answer (no PRs), so write it rather than keeping a stale one.
+    printf '%s' "$out" > "$CACHE"
+    [ -s "$CACHE" ] && printf '\n' >> "$CACHE"
+    date +%s > "$STAMP"
+}
+
+stale() {
+    [ -f "$STAMP" ] || return 0
+    local age=$(( $(date +%s) - $(cat "$STAMP" 2>/dev/null || echo 0) ))
+    [ "$age" -ge "$TTL" ]
+}
+
+# A cache printed long after it was written is a lie unless it says so. The marker only
+# appears once the data is well past its refresh window, which in practice means the
+# network or the sign-in is gone, not that a refresh is merely due.
+human_age() {
+    local s=$1
+    if [ "$s" -lt 3600 ]; then echo "$((s / 60))m"
+    elif [ "$s" -lt 86400 ]; then echo "$((s / 3600))h"
+    else echo "$((s / 86400))d"; fi
+}
+
+print_cache() {
+    [ -s "$CACHE" ] || return 0
+    local age=$(( $(date +%s) - $(cat "$STAMP" 2>/dev/null || echo 0) ))
+    if [ "$age" -lt $(( TTL * 4 )) ]; then
+        cat "$CACHE"
+        return 0
+    fi
+    local ago mark
+    ago=$(human_age "$age")
+    mark="  (stale $ago)"
+    [ -z "${NO_COLOR:-}" ] && mark=$'  \033[90m(stale '"$ago"$')\033[0m'
+    awk -v m="$mark" 'NR==1 { printf "%s%s\n", $0, m; next } { print }' "$CACHE"
+}
+
+usable() {
+    command -v gh >/dev/null 2>&1 &&
+        command -v jq >/dev/null 2>&1 &&
+        gh auth status >/dev/null 2>&1
+}
+
+case "${1:-block}" in
+    --version | -V)
+        echo "PRmeter $VERSION"
+        ;;
+    --help | -h)
+        cat <<EOF
+PRmeter $VERSION — your open PRs and what they need
+
+USAGE:
+    prmeter          print the block, refreshing in the background if stale
+    prmeter fetch    refresh now, and say why if it fails
+    prmeter --version
+
+Two lights per pull request, CI then review:
+    green   passing / approved
+    yellow  running / waiting on a reviewer
+    red     failing, a merge conflict included / changes requested
+    grey    the API said nothing, so neither do we
+
+ENVIRONMENT:
+    PRMETER_ORG           GitHub org to search (default: teamsense)
+    PRMETER_REPO_CHARS    repo name cap (default: 12)
+    PRMETER_TITLE_CHARS   PR title cap (default: 60)
+    PRMETER_MAX           rows before "+N more" (default: 8)
+    PRMETER_TTL           seconds before the cache is stale (default: 300)
+    PRMETER_ASCII         1 forces ASCII glyphs, 0 forbids the fallback
+    NO_COLOR              set to drop the colour
+EOF
+        ;;
+    fetch)
+        command -v gh >/dev/null 2>&1 || { echo "prmeter: gh is not installed" >&2; exit 1; }
+        command -v jq >/dev/null 2>&1 || { echo "prmeter: jq is not installed" >&2; exit 1; }
+        gh auth status >/dev/null 2>&1 || { echo "prmeter: gh is not signed in - run 'gh auth login'" >&2; exit 1; }
+        fetch || { echo "prmeter: could not reach the GitHub API" >&2; exit 1; }
+        print_cache
+        exit 0
+        ;;
+    block | *)
+        # A session start never waits on the network, and never shouts. The first run has
+        # nothing cached, so it pays the call once; after that the cache prints and the
+        # refresh happens behind it. Anything missing or broken prints nothing at all.
+        if [ ! -f "$CACHE" ]; then
+            usable || exit 0
+            fetch || exit 0
+        elif stale && usable; then
+            ("$SELF" fetch >/dev/null 2>&1 &)
+        fi
+        print_cache
+        exit 0
+        ;;
+esac
