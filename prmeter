@@ -148,6 +148,38 @@ if (($c | length) == 0) and $rv == 0 then empty else
 end
 JQ
 
+# The key, printed on its own by `prmeter legend` and folded into --help, so there is
+# one place to change it. Glyphs follow the same ASCII fallback the segment does.
+legend() {
+    local ok pend fail none eyes bar cnr
+    if want_ascii; then
+        ok="+"; pend="~"; fail="x"; none="."; eyes="@"; bar="|"; cnr="\\"
+    else
+        ok="✓"; pend="◷"; fail="✗"; none="·"; eyes="⊙"; bar="│"; cnr="└"
+    fi
+    # The example is fixed so the tree lines up; $LABEL only shows up in the prose.
+    cat <<EOF
+    [PRs] ${fail}1 ${pend}2 ${ok}1 ${eyes}6
+          $bar  $bar  $bar  $cnr six are waiting on your review
+          $bar  $bar  $cnr one of yours is ready
+          $bar  $cnr two of yours are waiting
+          $cnr one of yours needs you
+
+    $fail  needs you   CI failing, a merge conflict, or changes requested
+    $pend  waiting     CI still running, or nobody has reviewed it yet
+    $ok  ready       every check passed and it is approved
+    $none  unknown     the repo runs no checks, or nobody has been asked
+    $eyes  to review   requested of you, and still open
+
+A count of zero is left out, so $LABEL on its own means nothing is open.
+
+\`prmeter\` spells the same thing out, a row per pull request with two lights each:
+CI on the left, review on the right. Colour repeats the shape, so a terminal
+without one still reads.
+EOF
+}
+
+
 fetch() {
     mkdir -p "$CACHE_DIR" || return 1
     local ascii=0 nocolor=0 raw
@@ -219,6 +251,10 @@ case "${1:-block}" in
     --version | -V)
         echo "PRmeter $VERSION"
         ;;
+    legend | key)
+        legend
+        exit 0
+        ;;
     --help | -h)
         cat <<EOF
 PRmeter $VERSION — your open PRs and what they need
@@ -226,19 +262,16 @@ PRmeter $VERSION — your open PRs and what they need
 USAGE:
     prmeter          print the block, refreshing in the background if stale
     prmeter line     one statusline segment, then exit
+    prmeter legend   what the symbols mean
     prmeter fetch    refresh now, and say why if it fails
     prmeter --version
 
 The segment is the block in one line: your PRs counted by their worst light, then
 how many wait on your review.
 
-    [PRs] ✗1 ◷2 ✓1 ⊙6
-
-Two lights per pull request, CI then review:
-    green   passing / approved
-    yellow  running / waiting on a reviewer
-    red     failing, a merge conflict included / changes requested
-    grey    the API said nothing, so neither do we
+EOF
+        legend
+        cat <<EOF
 
 ENVIRONMENT:
     PRMETER_ORG           GitHub org to search (default: teamsense)

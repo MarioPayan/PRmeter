@@ -35,7 +35,8 @@ palette, in a pipe, or under `NO_COLOR`.
 Two groups: **mine** is what you opened, **review** is what is waiting on you. The label
 prints once per group, not once per row. Worst first, so what needs you is at the top.
 
-The segment says the same thing with counts instead of rows — one per light, worst
+`prmeter legend` prints this key in the terminal, and the segment says the same thing
+with counts instead of rows — one per light, worst
 first, zeros left out, and `⊙` for the ones waiting on your review. `[PRs]` on its own
 means nothing is open.
 
@@ -92,6 +93,7 @@ Drafts are filtered by the search itself, so they never leave GitHub.
 | `NO_COLOR` | drop the colour |
 
 `prmeter line` prints the statusline segment, `prmeter` the whole block, and both
-refresh behind themselves. `prmeter fetch` refreshes now and tells you why if it cannot.
+refresh behind themselves. `prmeter legend` is this page's table without leaving the
+terminal. `prmeter fetch` refreshes now and tells you why if it cannot.
 
 With no PRs, it prints nothing at all.
