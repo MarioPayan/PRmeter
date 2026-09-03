@@ -25,6 +25,11 @@ TTL="${PRMETER_TTL:-300}"
 # Set it to "" to drop the label and start at the lights.
 LABEL="${PRMETER_LABEL-[PRs]}"
 
+# The label is a hyperlink, so the one part of the segment that names it is also the
+# part that explains it. Terminals without OSC 8 ignore the sequence and print the
+# label; set this empty to not emit it at all.
+LINK="${PRMETER_LINK-https://github.com/MarioPayan/PRmeter#what-you-are-looking-at}"
+
 # Bots that request review in bulk drown the list. Set to "" to let them back in.
 REVIEW_FILTER="${PRMETER_REVIEW_FILTER:--author:app/dependabot}"
 
@@ -73,6 +78,8 @@ def g: if $ascii == "1"
        else {ok:"✓", pend:"◷", fail:"✗", none:"·", ell:"…", head:"⑂", sep:"·", eyes:"⊙"}
        end;
 def paint($code): if $nocolor == "1" then . else "\u001b[" + $code + "m" + . + "\u001b[0m" end;
+# OSC 8. A terminal that does not know it drops the sequence and shows the text.
+def link($u): if $u == "" then . else "\u001b]8;;" + $u + "\u001b\\" + . + "\u001b]8;;\u001b\\" end;
 def cut($n): if $n <= 0 then "" elif length <= $n then . else .[0:$n-1] + g.ell end;
 def padr($n): . + (" " * ([$n - length, 0] | max) // "");
 
@@ -139,7 +146,7 @@ read -r -d '' SEG <<'JQ'
  | map({key: .[0], value: length}) | from_entries) as $c |
 ([.data.toReview.nodes[]] | length) as $rv |
 if (($c | length) == 0) and $rv == 0 then empty else
-  (if $label == "" then [] else [ ($label | paint("36")) ] end)
+  (if $label == "" then [] else [ ($label | paint("36") | link($url)) ] end)
   + ([["0","fail","31"], ["1","pend","33"], ["2","none","90"], ["3","ok","32"]]
      | map(. as $t | select($c[$t[0]] != null)
            | (g[$t[1]] + ($c[$t[0]] | tostring)) | paint($t[2])))
@@ -182,9 +189,10 @@ EOF
 
 fetch() {
     mkdir -p "$CACHE_DIR" || return 1
-    local ascii=0 nocolor=0 raw
+    local ascii=0 nocolor=0 raw link="$LINK"
     want_ascii && ascii=1
-    [ -n "${NO_COLOR:-}" ] && nocolor=1
+    # NO_COLOR is the "no escape codes" flag in practice, and a hyperlink is one.
+    [ -n "${NO_COLOR:-}" ] && { nocolor=1; link=""; }
 
     raw=$(gh api graphql \
         -f query="$QUERY" \
@@ -195,7 +203,7 @@ fetch() {
         printf '%s' "$raw" | jq -r \
             --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
             --arg repochars "$REPO_CHARS" --arg titlechars "$TITLE_CHARS" \
-            --arg max "$MAX_ROWS" --arg label "$LABEL" \
+            --arg max "$MAX_ROWS" --arg label "$LABEL" --arg url "$link" \
             "$COMMON$1"
     }
 
@@ -278,6 +286,7 @@ ENVIRONMENT:
     PRMETER_REPO_CHARS    repo name cap (default: 12)
     PRMETER_TITLE_CHARS   PR title cap (default: 60)
     PRMETER_LABEL         what the segment answers to (default: [PRs]; "" drops it)
+    PRMETER_LINK          where the label points (default: the README; "" unlinks it)
     PRMETER_MAX           rows before "+N more" (default: 15)
     PRMETER_REVIEW_FILTER extra search terms for the review list
                           (default: -author:app/dependabot; "" lets bots back in)

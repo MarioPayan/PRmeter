@@ -28,8 +28,10 @@ under `~/.cache/prmeter`.
 
 ## If you are working on this repo
 
-Two files. `prmeter` is the whole tool, with the GraphQL query and the jq render program
-as heredocs inside it. `install.sh` places it and wires the hook.
+Two files do the work. `prmeter` is the whole tool, with the GraphQL query and the jq
+render programs as heredocs inside it. `install.sh` places it and wires the statusline.
+`tools/segment-svg.py` regenerates the README diagram; run it after any change to what
+the segment prints, and read the rendered result rather than trusting the geometry.
 
 Before committing:
 
@@ -60,6 +62,10 @@ Three things are easy to break by accident:
   none of it; the same goes for the `systemMessage` field, which lands as a meta message.
   Verified by running the TUI under a pty: eight SessionStart hooks produced zero bytes on
   the terminal.
+- **The README diagram is generated, and its callout lines are hand-placed arithmetic.**
+  A label that lands on top of its neighbour, or a leader line with no length, is a change
+  to a number in `tools/segment-svg.py` - both have happened. Render it and look:
+  `google-chrome --headless --screenshot=/tmp/seg.png <the svg>`.
 - **The segment and the block are both rendered at fetch time**, from the one API answer,
   into two cache files. A statusline runs on a timer, so a segment that computed anything
   would pay for it every few seconds.

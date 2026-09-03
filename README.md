@@ -3,13 +3,11 @@
 Your open PRs and what they need, in the Claude Code statusline. One script, one API
 call, no daemon.
 
-```
-[PRs] ✗1 ⊙6
-```
+![The segment annotated: a label that links here, then your open pull requests counted by their worse light — needing you, waiting, ready — and last how many are waiting on your review](docs/images/segment.svg)
 
-Your PRs counted by their worst light, then how many wait on your review. The label is
-there so the segment is findable in a statusline that already holds four other things.
-`prmeter` on its own opens it up:
+The label is a link: click it in any terminal that speaks OSC 8 and it opens this page.
+`prmeter legend` prints the same key without leaving the terminal, and `prmeter` on its
+own opens the whole thing up:
 
 ```
 ⑂ teamsense  2 mine · 1 to review
@@ -35,8 +33,7 @@ palette, in a pipe, or under `NO_COLOR`.
 Two groups: **mine** is what you opened, **review** is what is waiting on you. The label
 prints once per group, not once per row. Worst first, so what needs you is at the top.
 
-`prmeter legend` prints this key in the terminal, and the segment says the same thing
-with counts instead of rows — one per light, worst
+The segment says the same thing with counts instead of rows — one per light, worst
 first, zeros left out, and `⊙` for the ones waiting on your review. `[PRs]` on its own
 means nothing is open.
 
@@ -86,6 +83,7 @@ Drafts are filtered by the search itself, so they never leave GitHub.
 | `PRMETER_REPO_CHARS` | repo name cap (default `12`) |
 | `PRMETER_TITLE_CHARS` | PR title cap (default `60`) |
 | `PRMETER_LABEL` | what the segment answers to (default `[PRs]`, `""` drops it) |
+| `PRMETER_LINK` | where the label points (default this README, `""` unlinks it) |
 | `PRMETER_MAX` | rows before `+N more` (default `15`) |
 | `PRMETER_REVIEW_FILTER` | extra search terms for the review list (default `-author:app/dependabot`) |
 | `PRMETER_TTL` | seconds before the cache is stale (default `300`) |
