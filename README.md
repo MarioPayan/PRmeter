@@ -4,11 +4,12 @@ Your open PRs and what they need, in the Claude Code statusline. One script, one
 call, no daemon.
 
 ```
-⑂ ✗1 ⊙6
+[PRs] ✗1 ⊙6
 ```
 
-Your PRs counted by their worst light, then how many wait on your review. `prmeter` on
-its own opens it up:
+Your PRs counted by their worst light, then how many wait on your review. The label is
+there so the segment is findable in a statusline that already holds four other things.
+`prmeter` on its own opens it up:
 
 ```
 ⑂ teamsense  2 mine · 1 to review
@@ -35,8 +36,8 @@ Two groups: **mine** is what you opened, **review** is what is waiting on you. T
 prints once per group, not once per row. Worst first, so what needs you is at the top.
 
 The segment says the same thing with counts instead of rows — one per light, worst
-first, zeros left out, and `⊙` for the ones waiting on your review. `⑂` on its own means
-nothing is open.
+first, zeros left out, and `⊙` for the ones waiting on your review. `[PRs]` on its own
+means nothing is open.
 
 `·` is the honest fourth state. A PR nobody has been asked to review is not "waiting for
 approval", and a repo with no CI is not "passing" — inferring either would hide the most
@@ -83,6 +84,7 @@ Drafts are filtered by the search itself, so they never leave GitHub.
 | `PRMETER_ORG` | GitHub org to search (default `teamsense`) |
 | `PRMETER_REPO_CHARS` | repo name cap (default `12`) |
 | `PRMETER_TITLE_CHARS` | PR title cap (default `60`) |
+| `PRMETER_LABEL` | what the segment answers to (default `[PRs]`, `""` drops it) |
 | `PRMETER_MAX` | rows before `+N more` (default `15`) |
 | `PRMETER_REVIEW_FILTER` | extra search terms for the review list (default `-author:app/dependabot`) |
 | `PRMETER_TTL` | seconds before the cache is stale (default `300`) |

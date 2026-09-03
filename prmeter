@@ -21,6 +21,10 @@ TITLE_CHARS="${PRMETER_TITLE_CHARS:-60}"
 MAX_ROWS="${PRMETER_MAX:-15}"
 TTL="${PRMETER_TTL:-300}"
 
+# What the segment answers to in a statusline that already holds four other things.
+# Set it to "" to drop the label and start at the lights.
+LABEL="${PRMETER_LABEL-[PRs]}"
+
 # Bots that request review in bulk drown the list. Set to "" to let them back in.
 REVIEW_FILTER="${PRMETER_REVIEW_FILTER:--author:app/dependabot}"
 
@@ -135,7 +139,7 @@ read -r -d '' SEG <<'JQ'
  | map({key: .[0], value: length}) | from_entries) as $c |
 ([.data.toReview.nodes[]] | length) as $rv |
 if (($c | length) == 0) and $rv == 0 then empty else
-  [ (g.head | paint("36")) ]
+  (if $label == "" then [] else [ ($label | paint("36")) ] end)
   + ([["0","fail","31"], ["1","pend","33"], ["2","none","90"], ["3","ok","32"]]
      | map(. as $t | select($c[$t[0]] != null)
            | (g[$t[1]] + ($c[$t[0]] | tostring)) | paint($t[2])))
@@ -159,7 +163,7 @@ fetch() {
         printf '%s' "$raw" | jq -r \
             --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
             --arg repochars "$REPO_CHARS" --arg titlechars "$TITLE_CHARS" \
-            --arg max "$MAX_ROWS" \
+            --arg max "$MAX_ROWS" --arg label "$LABEL" \
             "$COMMON$1"
     }
 
@@ -228,7 +232,7 @@ USAGE:
 The segment is the block in one line: your PRs counted by their worst light, then
 how many wait on your review.
 
-    ⑂ ✗1 ◷2 ✓1 ⊙6
+    [PRs] ✗1 ◷2 ✓1 ⊙6
 
 Two lights per pull request, CI then review:
     green   passing / approved
@@ -240,6 +244,7 @@ ENVIRONMENT:
     PRMETER_ORG           GitHub org to search (default: teamsense)
     PRMETER_REPO_CHARS    repo name cap (default: 12)
     PRMETER_TITLE_CHARS   PR title cap (default: 60)
+    PRMETER_LABEL         what the segment answers to (default: [PRs]; "" drops it)
     PRMETER_MAX           rows before "+N more" (default: 15)
     PRMETER_REVIEW_FILTER extra search terms for the review list
                           (default: -author:app/dependabot; "" lets bots back in)
