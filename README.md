@@ -1,7 +1,14 @@
 # PRmeter
 
-Your open PRs and what they need, at the top of every Claude Code session. One script, one
-API call, no daemon.
+Your open PRs and what they need, in the Claude Code statusline. One script, one API
+call, no daemon.
+
+```
+⑂ ✗1 ⊙6
+```
+
+Your PRs counted by their worst light, then how many wait on your review. `prmeter` on
+its own opens it up:
 
 ```
 ⑂ teamsense  2 mine · 1 to review
@@ -27,6 +34,10 @@ palette, in a pipe, or under `NO_COLOR`.
 Two groups: **mine** is what you opened, **review** is what is waiting on you. The label
 prints once per group, not once per row. Worst first, so what needs you is at the top.
 
+The segment says the same thing with counts instead of rows — one per light, worst
+first, zeros left out, and `⊙` for the ones waiting on your review. `⑂` on its own means
+nothing is open.
+
 `·` is the honest fourth state. A PR nobody has been asked to review is not "waiting for
 approval", and a repo with no CI is not "passing" — inferring either would hide the most
 useful thing the block can tell you.
@@ -41,21 +52,12 @@ yet it says so, and PRmeter changes nothing rather than flashing a false alarm.
 curl -fsSL https://raw.githubusercontent.com/MarioPayan/PRmeter/main/install.sh | sh
 ```
 
-Installs the script and wires the session hook. Safe to run twice: it backs up your
-settings first, and it will not add a second hook if one is already there. `--no-wire`
-installs the script alone and prints the hook for you to add. Short enough to
+Installs the script and wires your statusline. Nothing here overwrites anything: an
+existing statusline script is backed up before a line is appended to it, an existing
+`statusLine` setting is left exactly as it is, and a second run does nothing.
+`--no-wire` installs the script alone and prints the snippet. Short enough to
 [read first](install.sh), which you should do with anything you pipe into a shell.
 
-**Then one line in your shell rc, or you will not see any of this:**
-
-```sh
-claude() { command -v prmeter >/dev/null && prmeter; command claude "$@"; }
-```
-
-A `SessionStart` hook hands its stdout to the *model*, not to your terminal — Claude
-Code reads it into the context and prints none of it. So the hook is what lets you ask
-Claude about your PRs, and this line is what puts them in front of you. Already wrap
-`claude` yourself? Put `prmeter` inside the wrapper you have.
 
 Needs [`gh`](https://cli.github.com) signed in, and [`jq`](https://jqlang.github.io/jq).
 PRmeter handles no token of its own: every call goes through `gh`, using the sign-in you
@@ -66,6 +68,7 @@ already have.
 | | |
 |---|---|
 | **Already on screen** | You never ask. Asking costs a round trip and some context |
+| **Not a session hook** | A `SessionStart` hook feeds the *model*, not you — Claude Code prints none of its stdout |
 | **One call** | Both lists come from a single GraphQL query, 1 of your 5000/hour |
 | **Never waits** | The block is rendered at fetch time and cached as text, so printing it is a `cat` |
 | **Never shouts** | No `gh`, no sign-in, no network: it prints nothing rather than an error at every session start |
@@ -86,7 +89,7 @@ Drafts are filtered by the search itself, so they never leave GitHub.
 | `PRMETER_ASCII` | `1` forces ASCII glyphs, `0` forbids the fallback |
 | `NO_COLOR` | drop the colour |
 
-`prmeter fetch` refreshes now and tells you why if it cannot. `prmeter` on its own prints
-the block and refreshes behind it.
+`prmeter line` prints the statusline segment, `prmeter` the whole block, and both
+refresh behind themselves. `prmeter fetch` refreshes now and tells you why if it cannot.
 
 With no PRs, it prints nothing at all.

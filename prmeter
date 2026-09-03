@@ -26,6 +26,7 @@ REVIEW_FILTER="${PRMETER_REVIEW_FILTER:--author:app/dependabot}"
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/prmeter"
 CACHE="$CACHE_DIR/block.txt"
+SEGMENT="$CACHE_DIR/segment.txt"
 STAMP="$CACHE_DIR/fetched-at"
 
 # Terminals that cannot draw the glyphs get plain ASCII. PRMETER_ASCII=1 forces the
@@ -62,10 +63,10 @@ query($q1: String!, $q2: String!) {
 }
 GRAPHQL
 
-read -r -d '' RENDER <<'JQ'
+read -r -d '' COMMON <<'JQ'
 def g: if $ascii == "1"
-       then {ok:"+", pend:"~", fail:"x", none:".", ell:">", head:"PR", sep:"."}
-       else {ok:"✓", pend:"◷", fail:"✗", none:"·", ell:"…", head:"⑂", sep:"·"}
+       then {ok:"+", pend:"~", fail:"x", none:".", ell:">", head:"PR", sep:".", eyes:"@"}
+       else {ok:"✓", pend:"◷", fail:"✗", none:"·", ell:"…", head:"⑂", sep:"·", eyes:"⊙"}
        end;
 def paint($code): if $nocolor == "1" then . else "\u001b[" + $code + "m" + . + "\u001b[0m" end;
 def cut($n): if $n <= 0 then "" elif length <= $n then . else .[0:$n-1] + g.ell end;
@@ -98,6 +99,9 @@ def row($group):
        number: ($pr.number | tostring),
        title: $pr.title, ci: $ci, rv: $rv};
 
+JQ
+
+read -r -d '' BLOCK <<'JQ'
 ([.data.mine.nodes[]     | row("mine")]   | sort_by(.rank, .repo, .number)) as $mine   |
 ([.data.toReview.nodes[] | row("review")] | sort_by(.rank, .repo, .number)) as $review |
 ($mine + $review) as $all |
@@ -123,9 +127,26 @@ if ($all | length) == 0 then empty else
 end
 JQ
 
+read -r -d '' SEG <<'JQ'
+# One statusline segment: your PRs by worst light, then how many wait on your review.
+# A count of zero is not printed - an absent number is quieter than a zero and says
+# the same thing. Nothing at all on either side prints nothing at all.
+([.data.mine.nodes[] | row("mine") | .rank | tostring] | group_by(.)
+ | map({key: .[0], value: length}) | from_entries) as $c |
+([.data.toReview.nodes[]] | length) as $rv |
+if (($c | length) == 0) and $rv == 0 then empty else
+  [ (g.head | paint("36")) ]
+  + ([["0","fail","31"], ["1","pend","33"], ["2","none","90"], ["3","ok","32"]]
+     | map(. as $t | select($c[$t[0]] != null)
+           | (g[$t[1]] + ($c[$t[0]] | tostring)) | paint($t[2])))
+  + (if $rv > 0 then [ (g.eyes + ($rv | tostring)) | paint("36") ] else [] end)
+  | join(" ")
+end
+JQ
+
 fetch() {
     mkdir -p "$CACHE_DIR" || return 1
-    local ascii=0 nocolor=0 raw out
+    local ascii=0 nocolor=0 raw
     want_ascii && ascii=1
     [ -n "${NO_COLOR:-}" ] && nocolor=1
 
@@ -134,15 +155,23 @@ fetch() {
         -F q1="org:$ORG author:@me is:pr is:open draft:false" \
         -F q2="org:$ORG review-requested:@me is:pr is:open draft:false $REVIEW_FILTER") || return 1
 
-    out=$(printf '%s' "$raw" | jq -r \
-        --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
-        --arg repochars "$REPO_CHARS" --arg titlechars "$TITLE_CHARS" \
-        --arg max "$MAX_ROWS" \
-        "$RENDER") || return 1
+    render() {
+        printf '%s' "$raw" | jq -r \
+            --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
+            --arg repochars "$REPO_CHARS" --arg titlechars "$TITLE_CHARS" \
+            --arg max "$MAX_ROWS" \
+            "$COMMON$1"
+    }
 
-    # An empty block is a real answer (no PRs), so write it rather than keeping a stale one.
-    printf '%s' "$out" > "$CACHE"
+    # Both shapes are rendered here, from the one answer, so printing either is a `cat`.
+    local block seg
+    block=$(render "$BLOCK") || return 1
+    seg=$(render "$SEG") || return 1
+
+    # An empty result is a real answer (no PRs), so write it rather than keeping a stale one.
+    printf '%s' "$block" > "$CACHE"
     [ -s "$CACHE" ] && printf '\n' >> "$CACHE"
+    printf '%s' "$seg" > "$SEGMENT"
     date +%s > "$STAMP"
 }
 
@@ -192,8 +221,14 @@ PRmeter $VERSION — your open PRs and what they need
 
 USAGE:
     prmeter          print the block, refreshing in the background if stale
+    prmeter line     one statusline segment, then exit
     prmeter fetch    refresh now, and say why if it fails
     prmeter --version
+
+The segment is the block in one line: your PRs counted by their worst light, then
+how many wait on your review.
+
+    ⑂ ✗1 ◷2 ✓1 ⊙6
 
 Two lights per pull request, CI then review:
     green   passing / approved
@@ -219,6 +254,19 @@ EOF
         gh auth status >/dev/null 2>&1 || { echo "prmeter: gh is not signed in - run 'gh auth login'" >&2; exit 1; }
         fetch || { echo "prmeter: could not reach the GitHub API" >&2; exit 1; }
         print_cache
+        exit 0
+        ;;
+    line)
+        # One statusline segment, on the same terms as the block: never waits on the
+        # network, never shouts, prints nothing when there is nothing to say. stdin is
+        # left alone - Claude Code pipes its payload in and this segment needs none of it.
+        if [ ! -f "$SEGMENT" ]; then
+            usable || exit 0
+            fetch || exit 0
+        elif stale && usable; then
+            ("$SELF" fetch >/dev/null 2>&1 &)
+        fi
+        [ -s "$SEGMENT" ] && cat "$SEGMENT"
         exit 0
         ;;
     block | *)

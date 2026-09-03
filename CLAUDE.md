@@ -2,28 +2,24 @@
 
 ## If someone asked you to install PRmeter
 
-Run this. It installs the script, wires the Claude Code session hook, and is safe to run
+Run this. It installs the script, wires the Claude Code statusline, and is safe to run
 twice:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MarioPayan/PRmeter/main/install.sh | sh
 ```
 
-Then give them the shell line too, because the hook alone shows them nothing:
-
-```sh
-claude() { command -v prmeter >/dev/null && prmeter; command claude "$@"; }
-```
+Then tell them to start a new Claude Code session to see the segment.
 
 What that script does, so you can say so if asked:
 
 - puts `prmeter` in `~/.local/bin` (override with `PRMETER_DEST`)
-- appends a `SessionStart` hook to `~/.claude/settings.json`, after copying it to
-  `settings.json.before-prmeter`
-- adds nothing on a second run, because a second hook would print the block twice
-- leaves every other hook alone
+- appends one line to `~/.claude/statusline.sh`, after copying it to
+  `statusline.sh.before-prmeter`, or writes that file when there is none
+- sets `statusLine` in `settings.json` only when nothing has set it already
+- adds nothing on a second run
 
-Pass `--no-wire` to install the script alone and print the hook instead.
+Pass `--no-wire` to install the script alone and print the snippet instead.
 
 **Tell them this before they run it:** PRmeter needs `gh` signed in and `jq` on the PATH.
 It handles no token of its own, and stores no credentials: every call goes through `gh`
@@ -59,11 +55,14 @@ Three things are easy to break by accident:
   terminal width: the width at print time is not knowable when the cache is written.
 - **Escape codes are written as jq's `\u001b`, not as raw bytes.** A literal ESC in the source
   survives a commit but not always a copy-paste, and this file is meant to be pasted.
-- **A `SessionStart` hook is not a way to show a person anything.** Claude Code reads its
-  stdout into the model's context and renders none of it; the same is true of the
-  `systemMessage` field, which lands as a meta message. Verified by running the TUI under a
-  pty: eight SessionStart hooks produced zero bytes on the terminal. That is why the shell
-  wrapper exists, and why removing it as redundant would make the tool invisible again.
+- **A `SessionStart` hook is not a way to show a person anything**, which is why this is a
+  statusline segment. Claude Code reads hook stdout into the model's context and renders
+  none of it; the same goes for the `systemMessage` field, which lands as a meta message.
+  Verified by running the TUI under a pty: eight SessionStart hooks produced zero bytes on
+  the terminal.
+- **The segment and the block are both rendered at fetch time**, from the one API answer,
+  into two cache files. A statusline runs on a timer, so a segment that computed anything
+  would pay for it every few seconds.
 
 The block's rules, in case a change looks like an improvement and is not: a light is
 never inferred, so absent data is grey rather than green or yellow; shape carries the
