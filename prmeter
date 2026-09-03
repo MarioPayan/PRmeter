@@ -18,8 +18,11 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 ORG="${PRMETER_ORG:-teamsense}"
 REPO_CHARS="${PRMETER_REPO_CHARS:-12}"
 TITLE_CHARS="${PRMETER_TITLE_CHARS:-60}"
-MAX_ROWS="${PRMETER_MAX:-8}"
+MAX_ROWS="${PRMETER_MAX:-15}"
 TTL="${PRMETER_TTL:-300}"
+
+# Bots that request review in bulk drown the list. Set to "" to let them back in.
+REVIEW_FILTER="${PRMETER_REVIEW_FILTER:--author:app/dependabot}"
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/prmeter"
 CACHE="$CACHE_DIR/block.txt"
@@ -129,7 +132,7 @@ fetch() {
     raw=$(gh api graphql \
         -f query="$QUERY" \
         -F q1="org:$ORG author:@me is:pr is:open draft:false" \
-        -F q2="org:$ORG review-requested:@me is:pr is:open draft:false") || return 1
+        -F q2="org:$ORG review-requested:@me is:pr is:open draft:false $REVIEW_FILTER") || return 1
 
     out=$(printf '%s' "$raw" | jq -r \
         --arg ascii "$ascii" --arg nocolor "$nocolor" --arg org "$ORG" \
@@ -202,7 +205,9 @@ ENVIRONMENT:
     PRMETER_ORG           GitHub org to search (default: teamsense)
     PRMETER_REPO_CHARS    repo name cap (default: 12)
     PRMETER_TITLE_CHARS   PR title cap (default: 60)
-    PRMETER_MAX           rows before "+N more" (default: 8)
+    PRMETER_MAX           rows before "+N more" (default: 15)
+    PRMETER_REVIEW_FILTER extra search terms for the review list
+                          (default: -author:app/dependabot; "" lets bots back in)
     PRMETER_TTL           seconds before the cache is stale (default: 300)
     PRMETER_ASCII         1 forces ASCII glyphs, 0 forbids the fallback
     NO_COLOR              set to drop the colour

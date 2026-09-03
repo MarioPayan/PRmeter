@@ -46,6 +46,17 @@ settings first, and it will not add a second hook if one is already there. `--no
 installs the script alone and prints the hook for you to add. Short enough to
 [read first](install.sh), which you should do with anything you pipe into a shell.
 
+**Then one line in your shell rc, or you will not see any of this:**
+
+```sh
+claude() { command -v prmeter >/dev/null && prmeter; command claude "$@"; }
+```
+
+A `SessionStart` hook hands its stdout to the *model*, not to your terminal — Claude
+Code reads it into the context and prints none of it. So the hook is what lets you ask
+Claude about your PRs, and this line is what puts them in front of you. Already wrap
+`claude` yourself? Put `prmeter` inside the wrapper you have.
+
 Needs [`gh`](https://cli.github.com) signed in, and [`jq`](https://jqlang.github.io/jq).
 PRmeter handles no token of its own: every call goes through `gh`, using the sign-in you
 already have.
@@ -69,7 +80,8 @@ Drafts are filtered by the search itself, so they never leave GitHub.
 | `PRMETER_ORG` | GitHub org to search (default `teamsense`) |
 | `PRMETER_REPO_CHARS` | repo name cap (default `12`) |
 | `PRMETER_TITLE_CHARS` | PR title cap (default `60`) |
-| `PRMETER_MAX` | rows before `+N more` (default `8`) |
+| `PRMETER_MAX` | rows before `+N more` (default `15`) |
+| `PRMETER_REVIEW_FILTER` | extra search terms for the review list (default `-author:app/dependabot`) |
 | `PRMETER_TTL` | seconds before the cache is stale (default `300`) |
 | `PRMETER_ASCII` | `1` forces ASCII glyphs, `0` forbids the fallback |
 | `NO_COLOR` | drop the colour |

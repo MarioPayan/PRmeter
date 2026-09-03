@@ -86,12 +86,23 @@ else
     say "wired the session hook into $SETTINGS (previous copy: $SETTINGS.before-prmeter)"
 fi
 
+# ---------------------------------------------------------------- your own eyes
+# The hook hands the block to Claude. It does not put it on your screen: Claude Code
+# reads SessionStart stdout into the model's context and prints none of it. Seeing it
+# yourself means printing it yourself, from the shell, just before Claude starts.
+say ""
+say "The hook above feeds the block to Claude. To put it on YOUR screen, add this to"
+say "your shell rc (~/.zshrc, ~/.bashrc):"
+say ""
+say '  claude() { command -v prmeter >/dev/null && prmeter; command claude "$@"; }'
+say ""
+say "Already wrap claude yourself? Put the line 'prmeter' inside the wrapper you have,"
+say "rather than pasting this over it."
+
 # ---------------------------------------------------------------- first fill
 say ""
 if "$DEST/prmeter" fetch >/dev/null 2>&1; then
     "$DEST/prmeter"
-    say ""
-    say "That block prints at the top of every new Claude Code session."
 else
     say "Installed. PRmeter will fill in once gh is signed in."
 fi
